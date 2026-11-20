@@ -5521,6 +5521,7 @@ let _portalKetTimer = {};
 
 let lastDashboardReport = null;
 let dashboardPollTimer = null;
+let dashboardReportLoading = false;
 let lastClearedList = []; 
 let historyLogData = { rows: [], summary: [] };
 
@@ -5609,11 +5610,11 @@ function switchTab(tab) {
     if (el) el.style.display = (t === (isCtl ? 'ctl' : tab)) ? 'flex' : 'none';
   });
 
-  if (dashboardPollTimer) { clearInterval(dashboardPollTimer); dashboardPollTimer = null; }
+  stopDashboardReportAutoRefresh();
   if (tab === 'files') {
-    loadDashboardReport();
+    loadDashboardReport(true);
     loadHistoryLog();
-    // Refresh berikutnya dikendalikan PortalSync berdasarkan perubahan versi data.
+    startDashboardReportAutoRefresh();
   }
   if (tab === 'so') { if (currentSoSubMode === 'admin') { if (SOA_D.length === 0) soa_load(false); } else { if (allData.length === 0) loadData(); } }
   if (tab === 'cso' && csoData[activeCsoDay].length === 0) loadCheckResult();
@@ -5630,7 +5631,39 @@ function switchTab(tab) {
 /* ══════════════════════════════════════════════════════════════════
    DASHBOARD LIVE REPORT (MATCHES TARGET MOCKUP EXACTLY)
    ══════════════════════════════════════════════════════════════════ */
+// Live Report diperbarui tiap 3 detik hanya saat panel Dashboard aktif.
+// Request yang masih berjalan tidak ditumpuk dengan request berikutnya.
+function stopDashboardReportAutoRefresh() {
+  if (dashboardPollTimer) {
+    clearInterval(dashboardPollTimer);
+    dashboardPollTimer = null;
+  }
+}
+
+function startDashboardReportAutoRefresh() {
+  stopDashboardReportAutoRefresh();
+  if (document.hidden) return;
+  dashboardPollTimer = setInterval(function () {
+    const panel = document.getElementById('panel-files');
+    if (!document.hidden && panel && panel.classList.contains('active')) {
+      loadDashboardReport(true);
+    }
+  }, 3000);
+}
+
+document.addEventListener('visibilitychange', function () {
+  const panel = document.getElementById('panel-files');
+  if (document.hidden) {
+    stopDashboardReportAutoRefresh();
+  } else if (panel && panel.classList.contains('active')) {
+    loadDashboardReport(true);
+    startDashboardReportAutoRefresh();
+  }
+});
+
 async function loadDashboardReport(force) {
+  if (dashboardReportLoading) return;
+  dashboardReportLoading = true;
   const grid = document.getElementById('dr-grid');
   const clearedList = document.getElementById('dr-cleared-list');
   try {
@@ -5641,6 +5674,8 @@ async function loadDashboardReport(force) {
     const msg = '⚠️ Gagal memuat live report: ' + esc(e.message);
     if (grid) grid.innerHTML = '<div class="dr-empty" style="grid-column:1/-1; color:var(--danger);">' + msg + '</div>';
     if (clearedList) clearedList.innerHTML = '<div class="dr-empty" style="color:var(--danger);">' + msg + '</div>';
+  } finally {
+    dashboardReportLoading = false;
   }
 }
 
